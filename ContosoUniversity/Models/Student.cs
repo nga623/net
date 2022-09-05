@@ -5,7 +5,15 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ContosoUniversity.Models
 {
-    public class Student
+    public interface IHasTimestamps
+    {
+        DateTime? Added { get; set; }
+        DateTime? Deleted { get; set; }
+        DateTime? Modified { get; set; }
+    }
+   
+     
+    public class Student : IHasTimestamps
     {
         public int ID { get; set; }
         [Required]
@@ -31,5 +39,8 @@ namespace ContosoUniversity.Models
         }
 
         public ICollection<Enrollment> Enrollments { get; set; }
+        public DateTime? Added { get; set; }
+        public DateTime? Deleted { get; set; }
+        public DateTime? Modified { get; set; }
     }
 }

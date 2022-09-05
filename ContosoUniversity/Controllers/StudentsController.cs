@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using ContosoUniversity.Data;
 using ContosoUniversity.Models;
 using System.Threading;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using BenchmarkDotNet.Attributes;
 
 namespace ContosoUniversity.Controllers
 {
@@ -131,6 +133,7 @@ namespace ContosoUniversity.Controllers
         {
             Console.WriteLine(Thread.GetCurrentProcessorId());
         }
+        [Benchmark]
         public async Task<IActionResult> Index(
      string sortOrder,
      string currentFilter,
@@ -139,23 +142,61 @@ namespace ContosoUniversity.Controllers
         {
 
 
-            // M();
-            //  var ss = M1();
-            //  M2().Wait();
-             M();
-           // M1();
-            var s2 =    M1();
-           
-            //Console.WriteLine(Thread.GetCurrentProcessorId());
-            //T2();
-            //T().Start();
-            //T1().Start();
+            var ss = _context.Students.TagWith("Use hint: robust plan").ToList();
 
 
 
-          //  Console.WriteLine(s2);
+            //使用 ChangeTracker.Entries 访问所有跟踪的实体
+            //1 如果不加 _context.Students.ToList();无法访问改变的跟踪实体
+            //2 _context.ChangeTracker.Entries<Enrollment>()也可使用泛型
+            //var s1 = _context.Students.ToList();
+            //foreach (var entityEntry in _context.ChangeTracker.Entries())
+            //{
+            //    Console.WriteLine($"Found {entityEntry.Metadata.Name} entity with ID {entityEntry.Property("ID").CurrentValue}");
+            //}
 
-            var s23 = await _context.Students.ToListAsync();
+            //封装crud
+            //_context.ChangeTracker.TrackGraph(
+            //    student, node =>
+            //    {
+            //        var propertyEntry = node.Entry.Property("Id");
+            //        var keyValue = (int)propertyEntry.CurrentValue;
+
+            //        if (keyValue == 0)
+            //        {
+            //            node.Entry.State = EntityState.Added;
+            //        }
+            //        else if (keyValue < 0)
+            //        {
+            //            propertyEntry.CurrentValue = -keyValue;
+            //            node.Entry.State = EntityState.Deleted;
+            //        }
+            //        else
+            //        {
+            //            node.Entry.State = EntityState.Modified;
+            //        }
+
+            //        Console.WriteLine($"Tracking {node.Entry.Metadata.DisplayName()} with key value {keyValue} as {node.Entry.State}");
+            //    });
+
+            //_context.SaveChanges();
+
+
+            //显示跟踪
+            // var attach = _context.Attach(new Student { LastName = "123", FirstMidName = "233" });
+            //  _context.SaveChanges(); //实际是新增实体
+            //  var update = _context.Update(new Student { LastName = "1", FirstMidName = "2" });
+            // _context.SaveChanges(); //实际是新增实体
+
+            //删除posts集合
+            //var s23 = _context.Students
+            //    .Where(p => p.LastName == "Justice")
+            //    .Include(p => p.Enrollments)
+            //    .First();
+            //_context.ChangeTracker.DetectChanges();
+            //Console.WriteLine(_context.ChangeTracker.DebugView.LongView);
+            //s23.Enrollments.Clear();
+            //_context.SaveChanges();
 
             //显示加载
             //var studentss = _context.Students;
@@ -270,15 +311,24 @@ namespace ContosoUniversity.Controllers
         public async Task<IActionResult> Create(
     [Bind("EnrollmentDate,FirstMidName,LastName")] Student student)
         {
+
+
+
+
+
+
+
+
+
             try
             {
                 if (ModelState.IsValid)
                 {
-                    _context.Add(student);
-
-                    await _context.SaveChangesAsync();
-                    _context.ChangeTracker.DetectChanges();
-                    Console.WriteLine(_context.ChangeTracker.DebugView.LongView);
+                    InsertOrUpdate(student);
+                    // _context.Add(student);
+                    //  await _context.SaveChangesAsync();
+                    // _context.ChangeTracker.DetectChanges();
+                    //  Console.WriteLine(_context.ChangeTracker.DebugView.LongView);
                     return RedirectToAction(nameof(Index));
                 }
             }
@@ -307,7 +357,61 @@ namespace ContosoUniversity.Controllers
             }
             return View(student);
         }
+        public void InsertOrUpdate(Student student)
+        {
 
+            var existingBlog = _context.Students.Find(student.ID);
+            if (existingBlog == null)
+            {
+                _context.Add(student);
+            }
+            else
+            {
+                //  _context.Update(student);
+                _context.Entry(existingBlog).CurrentValues.SetValues(student);
+            }
+
+            _context.SaveChanges();
+        }
+        public void InsertUpdateOrDeleteGraph(Student student)
+        {
+            var existingBlog = _context.Students
+                .Include(b => b.Enrollments)
+                .FirstOrDefault(b => b.ID == student.ID);
+
+            if (existingBlog == null)
+            {
+                _context.Add(student);
+            }
+            else
+            {
+                _context.Entry(existingBlog).CurrentValues.SetValues(student);
+                foreach (var post in student.Enrollments)
+                {
+                    var existingPost = existingBlog.Enrollments
+                        .FirstOrDefault(p => p.EnrollmentID == post.EnrollmentID);
+
+                    if (existingPost == null)
+                    {
+                        existingBlog.Enrollments.Add(post);
+                    }
+                    else
+                    {
+                        _context.Entry(existingPost).CurrentValues.SetValues(post);
+                    }
+                }
+
+                foreach (var post in existingBlog.Enrollments)
+                {
+                    if (!student.Enrollments.Any(p => p.EnrollmentID == post.EnrollmentID))
+                    {
+                        _context.Remove(post);
+                    }
+                }
+            }
+
+            _context.SaveChanges();
+        }
         // POST: Students/Edit/5
         // To protect from overposting attacks, enable the specific properties you want to bind to.
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
@@ -325,8 +429,9 @@ namespace ContosoUniversity.Controllers
             {
                 try
                 {
-                    _context.Update(student);
-                    await _context.SaveChangesAsync();
+                    InsertOrUpdate(student);
+                    // _context.Update(student);
+                    // await _context.SaveChangesAsync();
                 }
                 catch (DbUpdateConcurrencyException)
                 {
@@ -376,6 +481,10 @@ namespace ContosoUniversity.Controllers
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
             var student = await _context.Students.FindAsync(id);
+
+
+
+
             if (student == null)
             {
                 return RedirectToAction(nameof(Index));

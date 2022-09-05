@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Route.Models;
+using System;
 using System.Diagnostics;
 
 namespace Route.Controllers
@@ -19,7 +20,8 @@ namespace Route.Controllers
 
         public HomeController(ILogger<HomeController> logger)
         {
-            _logger = logger;
+            
+               _logger = logger;
         }
 
         
